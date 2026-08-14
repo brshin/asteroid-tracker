@@ -12,7 +12,7 @@
   --color-muted: #8b8b96;
   --color-hairline: #1c1c24;
 
-  --animate-fade-rise: fade-rise 500ms ease-out both;
+  --animate-fade-rise: fade-rise 500ms ease-out backwards;
   --animate-orbit: orbit 12s linear infinite;
   --animate-star-drift: star-drift 120s linear infinite;
 }

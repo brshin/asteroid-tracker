@@ -4,6 +4,20 @@ import { useAuth } from "@clerk/clerk-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 
+function scaleFromDiameter(meters, maxMeters) {
+    if (!meters || !maxMeters) {
+        return 1;
+    }
+    return 0.72 + (meters / maxMeters) * 0.58;
+}
+
+function formatDiameter(meters) {
+    if (meters == null || Number.isNaN(Number(meters))) {
+        return null;
+    }
+    return `${Math.round(Number(meters)).toLocaleString('en-US')} m`;
+}
+
 function App() {
     const [asteroids, setAsteroids] = useState([]);
     const [favorites, setFavorites] = useState([]);
@@ -152,6 +166,12 @@ function App() {
         });
     };
 
+    const maxDiameter = asteroids.reduce(
+        (max, asteroid) => Math.max(max, Number(asteroid.estimatedDiameter) || 0),
+        0
+    );
+    const favoriteNames = new Set(favorites.map((asteroid) => asteroid.name));
+
     return (
         <div className="min-h-screen bg-transparent text-[#e8e6e3] font-sans">
             <nav className="flex items-center justify-between px-8 py-5 border-b border-hairline bg-void/70">
@@ -214,91 +234,140 @@ function App() {
 
                         <div className="mb-12">
 
-                            <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-gray-700 pb-2 mb-6">
+                            <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-hairline pb-3 mb-8">
                                 <div>
-                                    <h2 className="text-3xl font-bold">Today's Asteroids</h2>
-                                    <p className="text-gray-400 text-sm mt-1">
+                                    <h2 className="font-serif text-3xl tracking-tight">Today&apos;s catalog</h2>
+                                    <p className="text-muted text-sm mt-1 tabular-nums">
                                         {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                        {asteroids.length > 0 && (
+                                            <span className="text-muted/80"> · {asteroids.length} objects</span>
+                                        )}
                                     </p>
                                 </div>
 
-                                <div className="mt-2 md:mt-0 text-xs font-bold text-gray-500 uppercase tracking-widest">
-                                    Source: <span className="text-blue-400">NASA NeoWs API</span>
+                                <div className="mt-2 md:mt-0 text-[11px] font-medium text-muted uppercase tracking-[0.22em]">
+                                    Source: <span className="text-accent">NASA NeoWs</span>
                                 </div>
                             </div>
 
-                            {/* Grid */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                                {asteroids.map((asteroid) => (
+                                {asteroids.map((asteroid, index) => {
+                                    const isFavorited = favoriteNames.has(asteroid.name);
+                                    const scale = scaleFromDiameter(asteroid.estimatedDiameter, maxDiameter);
+                                    const diameterLabel = formatDiameter(asteroid.estimatedDiameter);
+                                    const barWidth = maxDiameter
+                                        ? Math.max(8, (Number(asteroid.estimatedDiameter) / maxDiameter) * 100)
+                                        : 0;
 
-                                    /* Card */
-                                    <div key={asteroid.name} className="bg-[#161619] border border-gray-800 rounded-xl p-6 flex flex-col items-center text-center transition-transform hover:-translate-y-2 hover:shadow-2xl hover:border-gray-600">
-                                        <img src="/asteroid.svg" alt="Asteroid" className="w-16 h-16 mb-4 opacity-90" />
+                                    return (
+                                    <div
+                                        key={asteroid.name}
+                                        className="bg-surface/80 border border-hairline rounded-xl p-6 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-[0_0_24px_rgba(196,165,116,0.12)] animate-fade-rise"
+                                        style={{ animationDelay: `${index * 60}ms` }}
+                                    >
+                                        <img
+                                            src="/asteroid.svg"
+                                            alt=""
+                                            className="mb-4 opacity-90"
+                                            style={{ width: `${4 * scale}rem`, height: `${4 * scale}rem` }}
+                                        />
 
-                                        <h3 className="text-xl font-bold mb-2">{asteroid.name}</h3>
+                                        <h3 className="font-serif text-xl mb-2">{asteroid.name}</h3>
 
-                                        <p className={`font-semibold mb-6 px-3 py-1 rounded-full text-sm ${asteroid.potentiallyHazardous ? "bg-red-900/30 text-red-400" : "bg-green-900/30 text-green-400"}`}>
-                                        {asteroid.potentiallyHazardous ? "⚠️ Hazardous" : "✅ Safe"}
+                                        <p className={`mb-3 text-[11px] font-medium uppercase tracking-[0.2em] ${asteroid.potentiallyHazardous ? "text-hazard" : "text-safe"}`}>
+                                            {asteroid.potentiallyHazardous ? "PHA" : "Non-PHA"}
                                         </p>
 
-                                        <button 
+                                        {diameterLabel && (
+                                            <>
+                                                <p className="mb-2 tabular-nums text-sm text-muted">{diameterLabel}</p>
+                                                <div className="mb-6 h-px w-full bg-hairline">
+                                                    <div className="h-px bg-accent/70" style={{ width: `${barWidth}%` }} />
+                                                </div>
+                                            </>
+                                        )}
+
+                                        <button
                                             onClick={() => handleSaveAsteroid(asteroid)}
-                                            className="mt-auto w-full py-2 bg-[#2a2a35] hover:bg-blue-600 rounded-lg font-bold transition-colors"
+                                            disabled={isFavorited}
+                                            className={`mt-auto w-full py-2 rounded-md text-sm font-medium tracking-wide transition-colors ${
+                                                isFavorited
+                                                    ? "border border-hairline text-muted cursor-not-allowed"
+                                                    : "border border-accent/70 text-accent hover:bg-accent hover:text-void"
+                                            }`}
                                         >
-                                            Favorite
+                                            {isFavorited ? "In vault" : "Favorite"}
                                         </button>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
 
                         <div className="mt-16">
-                            <h2 className="text-3xl font-bold border-b border-gray-700 pb-2 mb-6">My Favorite Asteroids</h2>
+                            <h2 className="font-serif text-3xl tracking-tight border-b border-hairline pb-3 mb-8">The vault</h2>
 
                             {favorites.length === 0 ? (
-                                <div className="text-center py-16 bg-[#161619] rounded-xl border border-dashed border-gray-700 text-gray-500">
-                                    <p className="text-lg">Your vault is empty. Go favorite some space rocks above!</p>
+                                <div className="text-center py-16 rounded-xl border border-dashed border-hairline text-muted">
+                                    <p className="text-base">The vault is empty. Choose an object from today&apos;s catalog.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    {favorites.map((asteroid) => (
-                                        <div key={asteroid.name} className="bg-[#161619] border border-gray-800 rounded-xl p-6 flex flex-col items-center text-center transition-transform hover:-translate-y-2 hover:shadow-2xl hover:border-gray-600">
+                                    {favorites.map((asteroid, index) => {
+                                        const scale = scaleFromDiameter(asteroid.estimatedDiameter, maxDiameter);
+                                        const diameterLabel = formatDiameter(asteroid.estimatedDiameter);
 
-                                            <img src="/asteroid.svg" alt="Asteroid" className="w-16 h-16 mb-4 opacity-90 drop-shadow-[0_0_12px_rgba(74,78,105,0.6)]" />
-                                            
-                                            <h3 className="text-xl font-bold mb-2">{asteroid.name}</h3>
+                                        return (
+                                        <div
+                                            key={asteroid.name}
+                                            className="bg-surface/80 border border-hairline rounded-xl p-6 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-[0_0_24px_rgba(196,165,116,0.12)] animate-fade-rise"
+                                            style={{ animationDelay: `${index * 60}ms` }}
+                                        >
+                                            <img
+                                                src="/asteroid.svg"
+                                                alt=""
+                                                className="mb-4 opacity-90"
+                                                style={{ width: `${4 * scale}rem`, height: `${4 * scale}rem` }}
+                                            />
 
-                                            <p className={`font-semibold mb-4 px-3 py-1 rounded-full text-xs ${asteroid.potentiallyHazardous ? "bg-red-900/30 text-red-400" : "bg-green-900/30 text-green-400"}`}>
-                                                {asteroid.potentiallyHazardous ? "⚠️ Hazardous" : "✅ Safe"}
+                                            <h3 className="font-serif text-xl mb-2">{asteroid.name}</h3>
+
+                                            <p className={`mb-3 text-[11px] font-medium uppercase tracking-[0.2em] ${asteroid.potentiallyHazardous ? "text-hazard" : "text-safe"}`}>
+                                                {asteroid.potentiallyHazardous ? "PHA" : "Non-PHA"}
                                             </p>
 
-                                            <div className="w-full bg-[#0f0f11] rounded-lg p-3 mb-6 text-sm text-gray-300 text-left flex-grow border border-gray-800 shadow-inner">
-                                                <span className="text-gray-500 text-[10px] font-bold uppercase tracking-wider block mb-1">Commander's Log:</span>
-                                                <span className="italic">{asteroid.note || "No notes added yet."}</span>
+                                            {diameterLabel && (
+                                                <p className="mb-4 tabular-nums text-sm text-muted">{diameterLabel}</p>
+                                            )}
+
+                                            <div className="w-full bg-void/60 rounded-md p-3 mb-6 text-sm text-[#e8e6e3] text-left flex-grow border border-hairline">
+                                                <span className="text-muted text-[10px] font-medium uppercase tracking-[0.2em] block mb-1">Commander&apos;s log</span>
+                                                <span className="italic text-muted">{asteroid.note || "No notes yet."}</span>
                                             </div>
 
                                             <div className="flex gap-2 w-full mt-auto">
-                                                <button 
+                                                <button
                                                     onClick={() => {
                                                         const userNote = prompt("Enter a custom note for this asteroid:", asteroid.note || "");
                                                         if (userNote !== null) {
                                                             handleUpdateNote(asteroid.name, userNote);
                                                         }
                                                     }}
-                                                    className="flex-1 py-2 bg-blue-900/20 text-blue-400 border border-blue-800/50 hover:bg-blue-600 hover:text-white rounded-lg font-bold text-sm transition-all"    
+                                                    className="flex-1 py-2 border border-accent/50 text-accent hover:bg-accent hover:text-void rounded-md font-medium text-sm transition-colors"
                                                 >
-                                                    ✍️ Edit
+                                                    Edit
                                                 </button>
-                                                
-                                                <button 
+
+                                                <button
                                                     onClick={() => handleRemoveAsteroid(asteroid.name)}
-                                                    className="flex-1 py-2 bg-red-900/20 text-red-400 border border-red-800/50 hover:bg-red-600 hover:text-white rounded-lg font-bold text-sm transition-all"
+                                                    className="flex-1 py-2 border border-hairline text-muted hover:border-[#c17a6a]/60 hover:text-[#c17a6a] rounded-md font-medium text-sm transition-colors"
                                                 >
-                                                    🗑️ Drop
+                                                    Drop
                                                 </button>
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

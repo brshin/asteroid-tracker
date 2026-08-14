@@ -153,15 +153,18 @@ function App() {
     };
 
     return (
-        <div className="min-h-screen bg-[#0f0f11] text-gray-100 font-sans">
-            <nav className="flex items-center justify-between p-6 bg-[#1a1a1d] border-b border-gray-800 shadow-lg">
-                <h1 className="text-2xl font-bold tracking-wider text-white">☄️ Asteroid Tracker</h1>
+        <div className="min-h-screen bg-transparent text-[#e8e6e3] font-sans">
+            <nav className="flex items-center justify-between px-8 py-5 border-b border-hairline bg-void/70">
+                <h1 className="font-serif text-lg uppercase tracking-[0.28em] text-[#e8e6e3]">
+                    Asteroid Tracker
+                    <span className="mt-1.5 block h-px w-14 bg-accent" />
+                </h1>
 
                 <div className="auth-controls">
                     <SignedOut>
                         <SignInButton mode="modal">
-                            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition-colors">
-                                Sign In
+                            <button className="rounded-md border border-accent/70 px-4 py-2 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
+                                Sign in
                             </button>
                         </SignInButton>
                     </SignedOut>
@@ -172,24 +175,37 @@ function App() {
             </nav>
 
             <SignedOut>
-                <div className="flex flex-col items-center justify-center mt-20 text-center">
-                    <h2 className="text-4xl font-extrabold mb-4">Welcome to the Vault</h2>
-                    <p className="text-gray-400 text-lg">Please sign in to view and manage your favorite space rocks.</p>
+                <div className="flex min-h-[calc(100vh-4.5rem)] flex-col items-center justify-center px-6 text-center animate-fade-rise">
+                    <p className="mb-6 text-[11px] font-medium uppercase tracking-[0.35em] text-accent">
+                        Near-Earth Catalog
+                    </p>
+                    <h2 className="mb-6 font-serif text-5xl tracking-tight text-[#e8e6e3] md:text-7xl">
+                        The Vault
+                    </h2>
+                    <p className="mb-10 max-w-md text-base leading-relaxed text-muted">
+                        Sign in to browse today&apos;s near-Earth objects and keep a private log of those you choose to watch.
+                    </p>
+                    <SignInButton mode="modal">
+                        <button className="border border-accent bg-accent px-8 py-3 text-sm font-medium tracking-wide text-void transition-colors hover:bg-accent/90">
+                            Sign in
+                        </button>
+                    </SignInButton>
                 </div>
             </SignedOut>
 
             <SignedIn>
                 {isLoading ? (
-                    <div className="flex flex-col items-center justify-center my-32 text-center animate-fade-in">
-                        <img
-                            src="/asteroid.svg"
-                            alt="Loading Asteroids"
-                            className="w-24 h-24 mb-6 animate-spin opacity-75"
-                            style={{ animationDuration: '3s' }}
-                        />
-                        <h2 className="text-xl font-bold text-gray-200 mb-2">Establishing Link with Mission Control...</h2>
-                        <p className="text-gray-500 text-sm max-w-md px-6 leading-relaxed">
-                            The backend is waking up from its free-tier sleep cycle. This system initialization can take up to 30 seconds. Thank you for your patience!
+                    <div className="flex flex-col items-center justify-center my-32 text-center animate-fade-rise">
+                        <div className="relative mb-8 h-24 w-24" aria-hidden="true">
+                            <div className="absolute inset-0 rounded-full border border-hairline" />
+                            <div className="absolute inset-3 rounded-full border border-hairline/70" />
+                            <div className="absolute inset-0 animate-orbit">
+                                <span className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent" />
+                            </div>
+                        </div>
+                        <h2 className="mb-2 font-serif text-2xl text-[#e8e6e3]">Catalog coming online</h2>
+                        <p className="max-w-md px-6 text-sm leading-relaxed text-muted">
+                            The archive is waking from idle. This can take up to 30 seconds.
                         </p>
                     </div>
                 ) : (

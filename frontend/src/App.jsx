@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useAuth } from "@clerk/clerk-react";
 
@@ -22,8 +22,20 @@ function App() {
     const [asteroids, setAsteroids] = useState([]);
     const [favorites, setFavorites] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [toast, setToast] = useState(null);
+    const [editingName, setEditingName] = useState(null);
+    const [draftNote, setDraftNote] = useState('');
+    const toastTimer = useRef(null);
 
     const { getToken, isLoaded, isSignedIn } = useAuth();
+
+    const showToast = (message) => {
+        setToast(message);
+        if (toastTimer.current) {
+            clearTimeout(toastTimer.current);
+        }
+        toastTimer.current = setTimeout(() => setToast(null), 4000);
+    };
 
     useEffect(() => {
 
@@ -61,7 +73,7 @@ function App() {
             }
             catch (err) {
                 console.error("Error fetching all data:", err);
-                alert(err.message);
+                showToast(err.message);
             }
             finally {
                 setIsLoading(false);
@@ -101,7 +113,7 @@ function App() {
         .then(() => setFavorites(prevFavorites => [...prevFavorites, asteroid]))
         .catch(err => {
             console.error("Failed to add:", err);
-            alert(err.message);
+            showToast(err.message);
         });
     };
 
@@ -129,7 +141,7 @@ function App() {
         })
         .catch(err => {
             console.error("Error removing:", err.message);
-            alert(err.message);
+            showToast(err.message);
         });
             
     };
@@ -159,10 +171,12 @@ function App() {
                     ast.name === asteroidName ? updatedAsteroid : ast
                 )
             );
+            setEditingName(null);
+            setDraftNote('');
         })
         .catch(err => {
             console.error("Update failed:", err.message);
-            alert(`Error saving note: ${err.message}`);
+            showToast(`Error saving note: ${err.message}`);
         });
     };
 
@@ -340,6 +354,37 @@ function App() {
                                                 <p className="mb-4 tabular-nums text-sm text-muted">{diameterLabel}</p>
                                             )}
 
+                                            {editingName === asteroid.name ? (
+                                                <div className="w-full mb-2 text-left flex-grow">
+                                                    <label className="text-muted text-[10px] font-medium uppercase tracking-[0.2em] block mb-1">
+                                                        Commander&apos;s log
+                                                    </label>
+                                                    <textarea
+                                                        value={draftNote}
+                                                        onChange={(event) => setDraftNote(event.target.value)}
+                                                        rows={3}
+                                                        className="w-full resize-none rounded-md border border-accent/40 bg-void/60 p-3 text-sm text-[#e8e6e3] focus:border-accent focus:outline-none"
+                                                    />
+                                                    <div className="flex gap-2 w-full mt-2">
+                                                        <button
+                                                            onClick={() => handleUpdateNote(asteroid.name, draftNote)}
+                                                            className="flex-1 py-2 border border-accent/50 text-accent hover:bg-accent hover:text-void rounded-md font-medium text-sm transition-colors"
+                                                        >
+                                                            Save
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditingName(null);
+                                                                setDraftNote('');
+                                                            }}
+                                                            className="flex-1 py-2 border border-hairline text-muted hover:border-muted rounded-md font-medium text-sm transition-colors"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
                                             <div className="w-full bg-void/60 rounded-md p-3 mb-6 text-sm text-[#e8e6e3] text-left flex-grow border border-hairline">
                                                 <span className="text-muted text-[10px] font-medium uppercase tracking-[0.2em] block mb-1">Commander&apos;s log</span>
                                                 <span className="italic text-muted">{asteroid.note || "No notes yet."}</span>
@@ -348,10 +393,8 @@ function App() {
                                             <div className="flex gap-2 w-full mt-auto">
                                                 <button
                                                     onClick={() => {
-                                                        const userNote = prompt("Enter a custom note for this asteroid:", asteroid.note || "");
-                                                        if (userNote !== null) {
-                                                            handleUpdateNote(asteroid.name, userNote);
-                                                        }
+                                                        setEditingName(asteroid.name);
+                                                        setDraftNote(asteroid.note || '');
                                                     }}
                                                     className="flex-1 py-2 border border-accent/50 text-accent hover:bg-accent hover:text-void rounded-md font-medium text-sm transition-colors"
                                                 >
@@ -365,6 +408,8 @@ function App() {
                                                     Drop
                                                 </button>
                                             </div>
+                                                </>
+                                            )}
                                         </div>
                                         );
                                     })}
@@ -375,6 +420,15 @@ function App() {
                     </main>
                 )}
             </SignedIn>
+
+            {toast && (
+                <div
+                    role="status"
+                    className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 border border-hairline bg-surface px-4 py-3 text-sm text-[#e8e6e3] shadow-[0_8px_32px_rgba(0,0,0,0.45)] animate-fade-rise"
+                >
+                    {toast}
+                </div>
+            )}
 
         </div>    
 

@@ -1,4 +1,4 @@
-# Asteroid Tracker & Vault
+# Asteroid Tracker
 
 **[Live demo](https://asteroid-tracker-psi.vercel.app/)**
 
@@ -42,7 +42,7 @@ Browser (React + Clerk session)
 ## Project structure
 
 ```
-asteroid-tracker-vault/
+asteroid-tracker/
 ├── frontend/          # Vite + React app
 │   ├── .env.example
 │   └── src/

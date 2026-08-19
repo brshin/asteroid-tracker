@@ -1,6 +1,6 @@
 # Asteroid Tracker
 
-**[Live demo](https://asteroid-tracker-psi.vercel.app/)**
+**[Live demo](https://asteroid-tracker-neo.vercel.app/)**
 
 Full-stack app for browsing near-Earth objects from NASA’s NeoWs API and saving authenticated favorites (with optional notes) to MongoDB.
 

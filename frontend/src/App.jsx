@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useAuth } from "@clerk/clerk-react";
-import AsteroidMark from './AsteroidMark.jsx';
+import AsteroidMark, { variantFromName } from './AsteroidMark.jsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 const GUEST_SESSION_KEY = 'asteroid-tracker-guest';
@@ -432,18 +432,21 @@ function App() {
             </header>
 
             {!canBrowse && (
-                <section className="relative flex min-h-[calc(100vh-4.5rem)] items-center overflow-hidden px-5 pb-16 pt-8 md:px-10">
-                    <div
-                        className="pointer-events-none absolute right-[-12%] top-[4%] hidden lg:block"
-                        aria-hidden="true"
-                    >
+                <section className="relative flex min-h-[calc(100vh-4.5rem)] items-center overflow-hidden px-5 pb-16 pt-6 md:px-10">
+                    <div className="hero-stage right-[-4%] top-[6%] hidden lg:block" aria-hidden="true">
                         <div className="hero-orbit animate-orbit">
                             <span className="hero-orbit-dot" />
                         </div>
-                        <div className="sky-band absolute left-[18%] top-[42%] h-px w-[64%] bg-gradient-to-r from-transparent via-signal/55 to-transparent" />
+                        <div className="sky-band absolute left-[10%] top-[46%] h-px w-[80%] bg-gradient-to-r from-transparent via-signal/60 to-transparent" />
+                        <div className="hero-asteroid flex items-center justify-center">
+                            <AsteroidMark size="100%" variant={2} />
+                        </div>
                     </div>
 
                     <div className="relative z-10 w-full max-w-xl animate-fade-rise lg:max-w-2xl">
+                        <p className="mb-5 font-mono text-[11px] uppercase tracking-[0.28em] text-signal">
+                            Near-Earth catalog
+                        </p>
                         <h1 className="font-display text-[clamp(2.75rem,7vw,5.75rem)] font-extrabold leading-[0.95] tracking-[-0.04em] text-ink">
                             Asteroid
                             <br />
@@ -466,6 +469,9 @@ function App() {
                                 </button>
                             </SignInButton>
                         </div>
+                        <div className="mt-14 flex max-w-sm items-center justify-center lg:hidden" aria-hidden="true">
+                            <AsteroidMark size="11rem" variant={2} className="animate-float" />
+                        </div>
                     </div>
                 </section>
             )}
@@ -486,23 +492,39 @@ function App() {
                         </p>
                     </div>
                 ) : (
-                    <main className="mx-auto w-full max-w-6xl px-5 pb-20 pt-4 md:px-10">
+                    <main className="mx-auto w-full max-w-6xl px-5 pb-24 pt-2 md:px-10">
                         <section className="animate-fade-rise">
-                            <div className="mb-8 flex flex-col gap-4 border-b border-line pb-6 md:flex-row md:items-end md:justify-between">
+                            <div className="mb-10 grid gap-8 border-b border-line pb-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                                 <div>
+                                    <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.24em] text-signal">
+                                        Live feed
+                                    </p>
                                     <h2 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">
                                         Today&apos;s catalog
                                     </h2>
-                                    <p className="mt-2 font-mono text-xs tracking-[0.04em] text-ink-soft md:text-sm">
+                                    <p className="mt-3 font-mono text-xs tracking-[0.04em] text-ink-soft md:text-sm">
                                         {todayLabel}
-                                        {asteroids.length > 0 && (
-                                            <span> · {asteroids.length} objects</span>
-                                        )}
+                                        <span className="mx-2 text-line">/</span>
+                                        Source <span className="text-signal">NASA NeoWs</span>
                                     </p>
                                 </div>
-                                <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-                                    Source <span className="text-signal">NASA NeoWs</span>
-                                </p>
+                                <div className="text-left md:text-right">
+                                    <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
+                                        Objects
+                                    </p>
+                                    <p className="stat-num font-display text-6xl font-extrabold leading-none text-ink md:text-7xl">
+                                        {String(asteroids.length).padStart(2, '0')}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="mb-3 hidden font-mono text-[10px] uppercase tracking-[0.18em] text-ink-soft md:grid md:grid-cols-[3rem_4.5rem_minmax(0,1.4fr)_7rem_minmax(0,1fr)_auto] md:gap-5 md:px-1">
+                                <span>No</span>
+                                <span>Body</span>
+                                <span>Designation</span>
+                                <span>Class</span>
+                                <span>Diameter</span>
+                                <span className="text-right">Action</span>
                             </div>
 
                             <ul className="divide-y divide-line border-y border-line">
@@ -513,15 +535,24 @@ function App() {
                                     const barWidth = maxDiameter
                                         ? Math.max(8, (Number(asteroid.estimatedDiameter) / maxDiameter) * 100)
                                         : 0;
+                                    const variant = variantFromName(asteroid.name);
 
                                     return (
                                         <li
                                             key={asteroid.name}
-                                            className="grid grid-cols-1 items-center gap-5 py-6 animate-fade-rise md:grid-cols-[4.5rem_minmax(0,1.4fr)_7rem_minmax(0,1fr)_auto]"
-                                            style={{ animationDelay: `${index * 45}ms` }}
+                                            className="catalog-row grid grid-cols-1 items-center gap-5 px-1 py-6 animate-fade-rise md:grid-cols-[3rem_4.5rem_minmax(0,1.4fr)_7rem_minmax(0,1fr)_auto]"
+                                            style={{ animationDelay: `${index * 50}ms` }}
                                         >
+                                            <p className="font-mono text-xs tabular-nums text-ink-soft">
+                                                {String(index + 1).padStart(2, '0')}
+                                            </p>
+
                                             <div className="flex items-center justify-start md:justify-center">
-                                                <AsteroidMark size={`${3.1 * scale}rem`} />
+                                                <AsteroidMark
+                                                    size={`${3.15 * scale}rem`}
+                                                    variant={variant}
+                                                    hazardous={asteroid.potentiallyHazardous}
+                                                />
                                             </div>
 
                                             <div>
@@ -549,7 +580,7 @@ function App() {
                                                                 className="diameter-bar h-[3px] bg-signal"
                                                                 style={{
                                                                     width: `${barWidth}%`,
-                                                                    animationDelay: `${120 + index * 45}ms`,
+                                                                    animationDelay: `${140 + index * 50}ms`,
                                                                 }}
                                                             />
                                                         </div>
@@ -576,16 +607,29 @@ function App() {
                             </ul>
                         </section>
 
-                        <section className="mt-20 animate-fade-rise" style={{ animationDelay: '120ms' }}>
-                            <div className="mb-8 border-b border-line pb-6">
-                                <h2 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">
-                                    The vault
-                                </h2>
-                                <p className="mt-2 max-w-xl text-sm text-ink-soft">
-                                    {isSignedIn
-                                        ? 'Private watch list and commander\'s log synced to your account.'
-                                        : 'Saved on this device · Sign in to sync across sessions.'}
-                                </p>
+                        <section className="mt-24 animate-fade-rise" style={{ animationDelay: '140ms' }}>
+                            <div className="mb-8 grid gap-4 border-b border-line pb-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                                <div>
+                                    <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.24em] text-signal">
+                                        Watch list
+                                    </p>
+                                    <h2 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">
+                                        The vault
+                                    </h2>
+                                    <p className="mt-3 max-w-xl text-sm text-ink-soft">
+                                        {isSignedIn
+                                            ? 'Private watch list and commander\'s log synced to your account.'
+                                            : 'Saved on this device · Sign in to sync across sessions.'}
+                                    </p>
+                                </div>
+                                <div className="text-left md:text-right">
+                                    <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
+                                        Stored
+                                    </p>
+                                    <p className="stat-num font-display text-5xl font-extrabold leading-none text-ink md:text-6xl">
+                                        {String(favorites.length).padStart(2, '0')}
+                                    </p>
+                                </div>
                             </div>
 
                             {favorites.length === 0 ? (
@@ -606,15 +650,20 @@ function App() {
                                     {favorites.map((asteroid, index) => {
                                         const scale = scaleFromDiameter(asteroid.estimatedDiameter, maxDiameter);
                                         const diameterLabel = formatDiameter(asteroid.estimatedDiameter);
+                                        const variant = variantFromName(asteroid.name);
 
                                         return (
                                             <li
                                                 key={asteroid.name}
-                                                className="grid grid-cols-1 gap-5 py-7 animate-fade-rise md:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.2fr)]"
-                                                style={{ animationDelay: `${index * 45}ms` }}
+                                                className="catalog-row grid grid-cols-1 gap-5 px-1 py-7 animate-fade-rise md:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.2fr)]"
+                                                style={{ animationDelay: `${index * 50}ms` }}
                                             >
                                                 <div className="flex items-start justify-start md:justify-center">
-                                                    <AsteroidMark size={`${3.1 * scale}rem`} />
+                                                    <AsteroidMark
+                                                        size={`${3.15 * scale}rem`}
+                                                        variant={variant}
+                                                        hazardous={asteroid.potentiallyHazardous}
+                                                    />
                                                 </div>
 
                                                 <div>

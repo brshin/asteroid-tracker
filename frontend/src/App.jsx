@@ -123,8 +123,10 @@ function App() {
     const [editingName, setEditingName] = useState(null);
     const [draftNote, setDraftNote] = useState('');
     const [isGuest, setIsGuest] = useState(readGuestFlag);
+    const [leavingNames, setLeavingNames] = useState(() => new Set());
     const toastTimer = useRef(null);
     const syncAttempted = useRef(false);
+    const leaveTimers = useRef(new Map());
 
     const { getToken, isLoaded, isSignedIn } = useAuth();
     const canBrowse = isSignedIn || isGuest;
@@ -149,8 +151,17 @@ function App() {
         setFavorites([]);
         setEditingName(null);
         setDraftNote('');
+        setLeavingNames(new Set());
         setIsLoading(false);
     };
+
+    useEffect(() => {
+        const timers = leaveTimers.current;
+        return () => {
+            timers.forEach((timerId) => clearTimeout(timerId));
+            timers.clear();
+        };
+    }, []);
 
     useEffect(() => {
         if (isSignedIn && isGuest) {
@@ -283,7 +294,7 @@ function App() {
         });
     };
 
-    const handleRemoveAsteroid = async (asteroidName) => {
+    const removeFavoriteNow = async (asteroidName) => {
         if (!isSignedIn) {
             setFavorites((prevFavorites) => {
                 const next = prevFavorites.filter((ast) => ast.name !== asteroidName);
@@ -299,30 +310,59 @@ function App() {
 
         const token = await getToken();
 
-        fetch(`${API_BASE_URL}/asteroids/favorites/${asteroidName}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        })
-        .then(async (res) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/asteroids/favorites/${asteroidName}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             const data = await res.json();
 
             if (!res.ok) {
                 throw new Error(data.message || "Failed to delete asteroid");
             }
-            return data;
-        })
-        .then(data => {
-            console.log("Success! Server says:", data.message);
 
-            setFavorites(favorites => favorites.filter(ast => ast.name !== asteroidName));
-        })
-        .catch(err => {
+            console.log("Success! Server says:", data.message);
+            setFavorites((favorites) => favorites.filter((ast) => ast.name !== asteroidName));
+            if (editingName === asteroidName) {
+                setEditingName(null);
+                setDraftNote('');
+            }
+        } catch (err) {
             console.error("Error removing:", err.message);
             showToast(err.message);
-        });
-            
+            setLeavingNames((prev) => {
+                const next = new Set(prev);
+                next.delete(asteroidName);
+                return next;
+            });
+        }
+    };
+
+    const handleRemoveAsteroid = (asteroidName) => {
+        if (leavingNames.has(asteroidName)) {
+            return;
+        }
+
+        setLeavingNames((prev) => new Set(prev).add(asteroidName));
+
+        const existing = leaveTimers.current.get(asteroidName);
+        if (existing) {
+            clearTimeout(existing);
+        }
+
+        const timerId = setTimeout(() => {
+            leaveTimers.current.delete(asteroidName);
+            removeFavoriteNow(asteroidName);
+            setLeavingNames((prev) => {
+                const next = new Set(prev);
+                next.delete(asteroidName);
+                return next;
+            });
+        }, 280);
+
+        leaveTimers.current.set(asteroidName, timerId);
     };
 
     const handleUpdateNote = async (asteroidName, newNote) => {
@@ -406,18 +446,13 @@ function App() {
                 <div className="flex items-center gap-3">
                     <SignedOut>
                         {isGuest && (
-                            <>
-                                <span className="hidden font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft sm:inline">
-                                    Guest
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={exitGuest}
-                                    className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft transition-colors hover:text-signal"
-                                >
-                                    Exit guest
-                                </button>
-                            </>
+                            <button
+                                type="button"
+                                onClick={exitGuest}
+                                className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft transition-colors hover:text-signal"
+                            >
+                                Leave session
+                            </button>
                         )}
                         <SignInButton mode="modal">
                             <button className="border border-ink/20 bg-panel px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-signal hover:text-signal">
@@ -651,12 +686,16 @@ function App() {
                                         const scale = scaleFromDiameter(asteroid.estimatedDiameter, maxDiameter);
                                         const diameterLabel = formatDiameter(asteroid.estimatedDiameter);
                                         const variant = variantFromName(asteroid.name);
+                                        const isEditing = editingName === asteroid.name;
+                                        const isLeaving = leavingNames.has(asteroid.name);
 
                                         return (
                                             <li
                                                 key={asteroid.name}
-                                                className="catalog-row grid grid-cols-1 gap-5 px-1 py-7 animate-fade-rise md:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.2fr)]"
-                                                style={{ animationDelay: `${index * 50}ms` }}
+                                                className={`catalog-row grid grid-cols-1 gap-5 px-1 py-7 md:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.2fr)] ${
+                                                    isLeaving ? 'catalog-row-leave' : 'animate-fade-rise'
+                                                }`}
+                                                style={isLeaving ? undefined : { animationDelay: `${index * 50}ms` }}
                                             >
                                                 <div className="flex items-start justify-start md:justify-center">
                                                     <AsteroidMark
@@ -681,32 +720,35 @@ function App() {
                                                         )}
                                                     </p>
 
-                                                    <div className="mt-5 flex flex-wrap gap-2">
-                                                        {editingName !== asteroid.name && (
-                                                            <>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setEditingName(asteroid.name);
-                                                                        setDraftNote(asteroid.note || '');
-                                                                    }}
-                                                                    className="border border-ink/20 bg-panel px-4 py-2 text-sm font-semibold text-ink transition-colors hover:border-ink"
-                                                                >
-                                                                    Edit
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleRemoveAsteroid(asteroid.name)}
-                                                                    className="border border-transparent px-4 py-2 text-sm font-semibold text-hazard transition-colors hover:border-hazard/40"
-                                                                >
-                                                                    Drop
-                                                                </button>
-                                                            </>
-                                                        )}
+                                                    <div
+                                                        className={`mt-5 flex flex-wrap gap-2 transition-all duration-300 ease-out ${
+                                                            isEditing
+                                                                ? 'pointer-events-none max-h-0 -translate-y-1 overflow-hidden opacity-0'
+                                                                : 'max-h-12 translate-y-0 opacity-100'
+                                                        }`}
+                                                    >
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditingName(asteroid.name);
+                                                                setDraftNote(asteroid.note || '');
+                                                            }}
+                                                            className="border border-ink/20 bg-panel px-4 py-2 text-sm font-semibold text-ink transition-colors hover:border-ink"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleRemoveAsteroid(asteroid.name)}
+                                                            disabled={isLeaving}
+                                                            className="border border-transparent px-4 py-2 text-sm font-semibold text-hazard transition-colors hover:border-hazard/40 disabled:opacity-50"
+                                                        >
+                                                            Drop
+                                                        </button>
                                                     </div>
                                                 </div>
 
                                                 <div>
-                                                    {editingName === asteroid.name ? (
-                                                        <div className="border border-line bg-panel p-4">
+                                                    {isEditing ? (
+                                                        <div key={`${asteroid.name}-edit`} className="vault-panel border border-line bg-panel p-4">
                                                             <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-ink-soft">
                                                                 Commander&apos;s log
                                                             </label>
@@ -714,7 +756,7 @@ function App() {
                                                                 value={draftNote}
                                                                 onChange={(event) => setDraftNote(event.target.value)}
                                                                 rows={3}
-                                                                className="w-full resize-none border border-line bg-white p-3 text-sm text-ink outline-none focus:border-signal"
+                                                                className="w-full resize-none border border-line bg-white p-3 text-sm text-ink outline-none transition-colors focus:border-signal"
                                                             />
                                                             <div className="mt-3 flex gap-2">
                                                                 <button
@@ -735,7 +777,7 @@ function App() {
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <div className="border border-line bg-panel/80 p-4">
+                                                        <div key={`${asteroid.name}-view`} className="vault-panel border border-line bg-panel/80 p-4">
                                                             <span className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-ink-soft">
                                                                 Commander&apos;s log
                                                             </span>

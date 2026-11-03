@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useAuth } from "@clerk/clerk-react";
+import AsteroidMark from './AsteroidMark.jsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 const GUEST_SESSION_KEY = 'asteroid-tracker-guest';
+const LOCAL_VAULT_KEY = 'asteroid-tracker-guest-vault';
 
 function readGuestFlag() {
     try {
@@ -25,6 +27,35 @@ function writeGuestFlag(enabled) {
     }
 }
 
+function readLocalVault() {
+    try {
+        const raw = localStorage.getItem(LOCAL_VAULT_KEY);
+        if (!raw) {
+            return [];
+        }
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeLocalVault(favorites) {
+    try {
+        localStorage.setItem(LOCAL_VAULT_KEY, JSON.stringify(favorites));
+    } catch {
+        // localStorage may be unavailable
+    }
+}
+
+function clearLocalVault() {
+    try {
+        localStorage.removeItem(LOCAL_VAULT_KEY);
+    } catch {
+        // localStorage may be unavailable
+    }
+}
+
 function scaleFromDiameter(meters, maxMeters) {
     if (!meters || !maxMeters) {
         return 1;
@@ -39,6 +70,51 @@ function formatDiameter(meters) {
     return `${Math.round(Number(meters)).toLocaleString('en-US')} m`;
 }
 
+async function syncLocalVaultToServer(token) {
+    const localFavorites = readLocalVault();
+    if (localFavorites.length === 0) {
+        return 0;
+    }
+
+    let synced = 0;
+
+    for (const item of localFavorites) {
+        try {
+            const postRes = await fetch(`${API_BASE_URL}/asteroids/favorites`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    name: item.name,
+                    potentiallyHazardous: item.potentiallyHazardous,
+                }),
+            });
+
+            if (postRes.ok) {
+                synced += 1;
+            }
+
+            if (item.note) {
+                await fetch(`${API_BASE_URL}/asteroids/favorites/${encodeURIComponent(item.name)}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ note: item.note }),
+                });
+            }
+        } catch (err) {
+            console.error('Failed to sync local favorite:', item.name, err);
+        }
+    }
+
+    clearLocalVault();
+    return synced;
+}
+
 function App() {
     const [asteroids, setAsteroids] = useState([]);
     const [favorites, setFavorites] = useState([]);
@@ -48,6 +124,7 @@ function App() {
     const [draftNote, setDraftNote] = useState('');
     const [isGuest, setIsGuest] = useState(readGuestFlag);
     const toastTimer = useRef(null);
+    const syncAttempted = useRef(false);
 
     const { getToken, isLoaded, isSignedIn } = useAuth();
     const canBrowse = isSignedIn || isGuest;
@@ -63,6 +140,16 @@ function App() {
     const enterAsGuest = () => {
         writeGuestFlag(true);
         setIsGuest(true);
+    };
+
+    const exitGuest = () => {
+        writeGuestFlag(false);
+        setIsGuest(false);
+        setAsteroids([]);
+        setFavorites([]);
+        setEditingName(null);
+        setDraftNote('');
+        setIsLoading(false);
     };
 
     useEffect(() => {
@@ -81,6 +168,7 @@ function App() {
             setAsteroids([]);
             setFavorites([]);
             setIsLoading(false);
+            syncAttempted.current = false;
             return;
         }
 
@@ -90,6 +178,15 @@ function App() {
             try {
                 if (isSignedIn) {
                     const token = await getToken();
+
+                    if (!syncAttempted.current) {
+                        syncAttempted.current = true;
+                        const syncedCount = await syncLocalVaultToServer(token);
+                        if (syncedCount > 0) {
+                            showToast(`Synced ${syncedCount} local favorite${syncedCount === 1 ? '' : 's'} to your vault.`);
+                        }
+                    }
+
                     const [asteroidsRes, favoritesRes] = await Promise.all([
                         fetch(`${API_BASE_URL}/asteroids`),
                         fetch(`${API_BASE_URL}/asteroids/favorites`, {
@@ -117,7 +214,7 @@ function App() {
                         setAsteroids(asteroidsData);
                     }
 
-                    setFavorites([]);
+                    setFavorites(readLocalVault());
                 }
             }
             catch (err) {
@@ -134,7 +231,24 @@ function App() {
 
     const handleSaveAsteroid = async (asteroid) => {
         if (!isSignedIn) {
-            showToast('Sign in to save favorites to your vault.');
+            setFavorites((prevFavorites) => {
+                if (prevFavorites.some((item) => item.name === asteroid.name)) {
+                    return prevFavorites;
+                }
+
+                const next = [
+                    ...prevFavorites,
+                    {
+                        name: asteroid.name,
+                        potentiallyHazardous: asteroid.potentiallyHazardous,
+                        estimatedDiameter: asteroid.estimatedDiameter,
+                        note: '',
+                    },
+                ];
+                writeLocalVault(next);
+                return next;
+            });
+            showToast('Saved on this device. Sign in to sync your vault.');
             return;
         }
 
@@ -170,6 +284,19 @@ function App() {
     };
 
     const handleRemoveAsteroid = async (asteroidName) => {
+        if (!isSignedIn) {
+            setFavorites((prevFavorites) => {
+                const next = prevFavorites.filter((ast) => ast.name !== asteroidName);
+                writeLocalVault(next);
+                return next;
+            });
+            if (editingName === asteroidName) {
+                setEditingName(null);
+                setDraftNote('');
+            }
+            return;
+        }
+
         const token = await getToken();
 
         fetch(`${API_BASE_URL}/asteroids/favorites/${asteroidName}`, {
@@ -199,6 +326,20 @@ function App() {
     };
 
     const handleUpdateNote = async (asteroidName, newNote) => {
+        if (!isSignedIn) {
+            setFavorites((prevFavorites) => {
+                const next = prevFavorites.map((ast) =>
+                    ast.name === asteroidName ? { ...ast, note: newNote } : ast
+                );
+                writeLocalVault(next);
+                return next;
+            });
+            setEditingName(null);
+            setDraftNote('');
+            showToast('Note saved on this device.');
+            return;
+        }
+
         const token = await getToken();
 
         fetch(`${API_BASE_URL}/asteroids/favorites/${asteroidName}`, {
@@ -237,24 +378,49 @@ function App() {
         0
     );
     const favoriteNames = new Set(favorites.map((asteroid) => asteroid.name));
+    const todayLabel = new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    });
 
     return (
-        <div className="min-h-screen bg-transparent text-[#e8e6e3] font-sans">
-            <nav className="flex items-center justify-between px-8 py-5 border-b border-hairline bg-void/70">
-                <h1 className="font-serif text-lg uppercase tracking-[0.28em] text-[#e8e6e3]">
-                    Asteroid Tracker
-                    <span className="mt-1.5 block h-px w-14 bg-accent" />
-                </h1>
+        <div className="min-h-screen font-sans text-ink">
+            <header className="relative z-10 flex items-center justify-between px-5 py-4 md:px-10">
+                {isGuest ? (
+                    <button
+                        type="button"
+                        onClick={exitGuest}
+                        className="font-display text-sm font-bold tracking-[0.18em] uppercase text-ink transition-colors hover:text-signal md:text-base"
+                        aria-label="Back to welcome"
+                    >
+                        Asteroid Tracker
+                    </button>
+                ) : (
+                    <p className="font-display text-sm font-bold tracking-[0.18em] uppercase text-ink md:text-base">
+                        Asteroid Tracker
+                    </p>
+                )}
 
-                <div className="auth-controls flex items-center gap-3">
+                <div className="flex items-center gap-3">
                     <SignedOut>
                         {isGuest && (
-                            <span className="hidden sm:inline text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
-                                Guest
-                            </span>
+                            <>
+                                <span className="hidden font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft sm:inline">
+                                    Guest
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={exitGuest}
+                                    className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft transition-colors hover:text-signal"
+                                >
+                                    Exit guest
+                                </button>
+                            </>
                         )}
                         <SignInButton mode="modal">
-                            <button className="rounded-md border border-accent/70 px-4 py-2 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
+                            <button className="border border-ink/20 bg-panel px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-signal hover:text-signal">
                                 Sign in
                             </button>
                         </SignInButton>
@@ -263,75 +429,83 @@ function App() {
                         <UserButton />
                     </SignedIn>
                 </div>
-            </nav>
+            </header>
 
             {!canBrowse && (
-                <div className="flex min-h-[calc(100vh-4.5rem)] flex-col items-center justify-center px-6 text-center animate-fade-rise">
-                    <p className="mb-6 text-[11px] font-medium uppercase tracking-[0.35em] text-accent">
-                        Near-Earth Catalog
-                    </p>
-                    <h2 className="mb-6 font-serif text-5xl tracking-tight text-[#e8e6e3] md:text-7xl">
-                        The Vault
-                    </h2>
-                    <p className="mb-10 max-w-md text-base leading-relaxed text-muted">
-                        Browse today&apos;s near-Earth objects as a guest, or sign in to keep a private vault of the ones you watch.
-                    </p>
-                    <div className="flex flex-col items-center gap-3 sm:flex-row">
-                        <button
-                            type="button"
-                            onClick={enterAsGuest}
-                            className="border border-accent bg-accent px-8 py-3 text-sm font-medium tracking-wide text-void transition-colors hover:bg-accent/90"
-                        >
-                            Continue as guest
-                        </button>
-                        <SignInButton mode="modal">
-                            <button className="border border-accent/70 px-8 py-3 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
-                                Sign in
-                            </button>
-                        </SignInButton>
+                <section className="relative flex min-h-[calc(100vh-4.5rem)] items-center overflow-hidden px-5 pb-16 pt-8 md:px-10">
+                    <div
+                        className="pointer-events-none absolute right-[-12%] top-[4%] hidden lg:block"
+                        aria-hidden="true"
+                    >
+                        <div className="hero-orbit animate-orbit">
+                            <span className="hero-orbit-dot" />
+                        </div>
+                        <div className="sky-band absolute left-[18%] top-[42%] h-px w-[64%] bg-gradient-to-r from-transparent via-signal/55 to-transparent" />
                     </div>
-                </div>
+
+                    <div className="relative z-10 w-full max-w-xl animate-fade-rise lg:max-w-2xl">
+                        <h1 className="font-display text-[clamp(2.75rem,7vw,5.75rem)] font-extrabold leading-[0.95] tracking-[-0.04em] text-ink">
+                            Asteroid
+                            <br />
+                            Tracker
+                        </h1>
+                        <p className="mt-7 max-w-md text-base leading-relaxed text-ink-soft md:text-lg">
+                            Today&apos;s near-Earth objects from NASA NeoWs — browse as a guest, or sign in to keep a private watch list.
+                        </p>
+                        <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <button
+                                type="button"
+                                onClick={enterAsGuest}
+                                className="bg-signal px-7 py-3.5 text-sm font-semibold tracking-wide text-signal-ink transition-opacity hover:opacity-90"
+                            >
+                                Continue as guest
+                            </button>
+                            <SignInButton mode="modal">
+                                <button className="border border-ink/25 bg-transparent px-7 py-3.5 text-sm font-semibold tracking-wide text-ink transition-colors hover:border-ink">
+                                    Sign in
+                                </button>
+                            </SignInButton>
+                        </div>
+                    </div>
+                </section>
             )}
 
             {canBrowse && (
                 <>
                 {isLoading ? (
-                    <div className="flex flex-col items-center justify-center my-32 text-center animate-fade-rise">
-                        <div className="relative mb-8 h-24 w-24" aria-hidden="true">
-                            <div className="absolute inset-0 rounded-full border border-hairline" />
-                            <div className="absolute inset-3 rounded-full border border-hairline/70" />
+                    <div className="mx-auto flex max-w-lg flex-col items-center px-6 py-28 text-center animate-fade-rise">
+                        <div className="relative mb-8 h-20 w-20" aria-hidden="true">
+                            <div className="absolute inset-0 rounded-full border border-ink/15" />
                             <div className="absolute inset-0 animate-orbit">
-                                <span className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent" />
+                                <span className="absolute left-1/2 top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-signal" />
                             </div>
                         </div>
-                        <h2 className="mb-2 font-serif text-2xl text-[#e8e6e3]">Catalog coming online</h2>
-                        <p className="max-w-md px-6 text-sm leading-relaxed text-muted">
+                        <h2 className="font-display text-3xl font-bold tracking-tight text-ink">Catalog coming online</h2>
+                        <p className="mt-3 text-sm leading-relaxed text-ink-soft">
                             The archive is waking from idle. This can take up to 30 seconds.
                         </p>
                     </div>
                 ) : (
-                
-                    <main className="max-w-7xl mx-auto p-8">
-
-                        <div className="mb-12">
-
-                            <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-hairline pb-3 mb-8">
+                    <main className="mx-auto w-full max-w-6xl px-5 pb-20 pt-4 md:px-10">
+                        <section className="animate-fade-rise">
+                            <div className="mb-8 flex flex-col gap-4 border-b border-line pb-6 md:flex-row md:items-end md:justify-between">
                                 <div>
-                                    <h2 className="font-serif text-3xl tracking-tight">Today&apos;s catalog</h2>
-                                    <p className="text-muted text-sm mt-1 tabular-nums">
-                                        {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                    <h2 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">
+                                        Today&apos;s catalog
+                                    </h2>
+                                    <p className="mt-2 font-mono text-xs tracking-[0.04em] text-ink-soft md:text-sm">
+                                        {todayLabel}
                                         {asteroids.length > 0 && (
-                                            <span className="text-muted/80"> · {asteroids.length} objects</span>
+                                            <span> · {asteroids.length} objects</span>
                                         )}
                                     </p>
                                 </div>
-
-                                <div className="mt-2 md:mt-0 text-[11px] font-medium text-muted uppercase tracking-[0.22em]">
-                                    Source: <span className="text-accent">NASA NeoWs</span>
-                                </div>
+                                <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
+                                    Source <span className="text-signal">NASA NeoWs</span>
+                                </p>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <ul className="divide-y divide-line border-y border-line">
                                 {asteroids.map((asteroid, index) => {
                                     const isFavorited = favoriteNames.has(asteroid.name);
                                     const scale = scaleFromDiameter(asteroid.estimatedDiameter, maxDiameter);
@@ -341,168 +515,193 @@ function App() {
                                         : 0;
 
                                     return (
-                                    <div
-                                        key={asteroid.name}
-                                        className="bg-surface/80 border border-hairline rounded-xl p-6 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-[0_0_24px_rgba(196,165,116,0.12)] animate-fade-rise"
-                                        style={{ animationDelay: `${index * 60}ms` }}
-                                    >
-                                        <img
-                                            src="/asteroid.svg"
-                                            alt=""
-                                            className="mb-4 opacity-90"
-                                            style={{ width: `${4 * scale}rem`, height: `${4 * scale}rem` }}
-                                        />
+                                        <li
+                                            key={asteroid.name}
+                                            className="grid grid-cols-1 items-center gap-5 py-6 animate-fade-rise md:grid-cols-[4.5rem_minmax(0,1.4fr)_7rem_minmax(0,1fr)_auto]"
+                                            style={{ animationDelay: `${index * 45}ms` }}
+                                        >
+                                            <div className="flex items-center justify-start md:justify-center">
+                                                <AsteroidMark size={`${3.1 * scale}rem`} />
+                                            </div>
 
-                                        <h3 className="font-serif text-xl mb-2">{asteroid.name}</h3>
+                                            <div>
+                                                <h3 className="font-display text-2xl font-bold tracking-tight text-ink">
+                                                    {asteroid.name}
+                                                </h3>
+                                            </div>
 
-                                        <p className={`mb-3 text-[11px] font-medium uppercase tracking-[0.2em] ${asteroid.potentiallyHazardous ? "text-hazard" : "text-safe"}`}>
-                                            {asteroid.potentiallyHazardous ? "PHA" : "Non-PHA"}
-                                        </p>
-
-                                        {diameterLabel && (
-                                            <>
-                                                <p className="mb-2 tabular-nums text-sm text-muted">{diameterLabel}</p>
-                                                <div className="mb-6 h-px w-full bg-hairline">
-                                                    <div className="h-px bg-accent/70" style={{ width: `${barWidth}%` }} />
-                                                </div>
-                                            </>
-                                        )}
-
-                                        {isSignedIn ? (
-                                            <button
-                                                onClick={() => handleSaveAsteroid(asteroid)}
-                                                disabled={isFavorited}
-                                                className={`mt-auto w-full py-2 rounded-md text-sm font-medium tracking-wide transition-colors ${
-                                                    isFavorited
-                                                        ? "border border-hairline text-muted cursor-not-allowed"
-                                                        : "border border-accent/70 text-accent hover:bg-accent hover:text-void"
+                                            <p
+                                                className={`font-mono text-[11px] font-medium uppercase tracking-[0.18em] ${
+                                                    asteroid.potentiallyHazardous ? 'text-hazard' : 'text-safe'
                                                 }`}
                                             >
-                                                {isFavorited ? "In vault" : "Favorite"}
-                                            </button>
-                                        ) : (
-                                            <SignInButton mode="modal">
-                                                <button className="mt-auto w-full rounded-md border border-accent/70 py-2 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
-                                                    Sign in to favorite
+                                                {asteroid.potentiallyHazardous ? 'PHA' : 'Non-PHA'}
+                                            </p>
+
+                                            <div className="min-w-0">
+                                                {diameterLabel && (
+                                                    <>
+                                                        <p className="mb-2 font-mono text-sm tabular-nums text-ink-soft">
+                                                            {diameterLabel}
+                                                        </p>
+                                                        <div className="h-[3px] w-full bg-line/80">
+                                                            <div
+                                                                className="diameter-bar h-[3px] bg-signal"
+                                                                style={{
+                                                                    width: `${barWidth}%`,
+                                                                    animationDelay: `${120 + index * 45}ms`,
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            <div className="md:justify-self-end">
+                                                <button
+                                                    onClick={() => handleSaveAsteroid(asteroid)}
+                                                    disabled={isFavorited}
+                                                    className={`w-full px-4 py-2.5 text-sm font-semibold tracking-wide transition-colors md:w-auto ${
+                                                        isFavorited
+                                                            ? 'cursor-not-allowed border border-line text-ink-soft'
+                                                            : 'bg-ink text-panel hover:bg-signal hover:text-signal-ink'
+                                                    }`}
+                                                >
+                                                    {isFavorited ? 'In vault' : 'Favorite'}
                                                 </button>
-                                            </SignInButton>
-                                        )}
-                                    </div>
+                                            </div>
+                                        </li>
                                     );
                                 })}
+                            </ul>
+                        </section>
+
+                        <section className="mt-20 animate-fade-rise" style={{ animationDelay: '120ms' }}>
+                            <div className="mb-8 border-b border-line pb-6">
+                                <h2 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">
+                                    The vault
+                                </h2>
+                                <p className="mt-2 max-w-xl text-sm text-ink-soft">
+                                    {isSignedIn
+                                        ? 'Private watch list and commander\'s log synced to your account.'
+                                        : 'Saved on this device · Sign in to sync across sessions.'}
+                                </p>
                             </div>
-                        </div>
 
-                        <div className="mt-16">
-                            <h2 className="font-serif text-3xl tracking-tight border-b border-hairline pb-3 mb-8">The vault</h2>
-
-                            {!isSignedIn ? (
-                                <div className="rounded-xl border border-dashed border-hairline px-6 py-16 text-center text-muted">
-                                    <p className="mb-6 text-base">
-                                        Sign in to save asteroids and keep a private commander&apos;s log.
-                                    </p>
-                                    <SignInButton mode="modal">
-                                        <button className="border border-accent bg-accent px-8 py-3 text-sm font-medium tracking-wide text-void transition-colors hover:bg-accent/90">
-                                            Sign in to unlock vault
-                                        </button>
-                                    </SignInButton>
-                                </div>
-                            ) : favorites.length === 0 ? (
-                                <div className="text-center py-16 rounded-xl border border-dashed border-hairline text-muted">
+                            {favorites.length === 0 ? (
+                                <div className="border border-dashed border-line px-6 py-14 text-ink-soft">
                                     <p className="text-base">The vault is empty. Choose an object from today&apos;s catalog.</p>
+                                    {!isSignedIn && (
+                                        <div className="mt-6">
+                                            <SignInButton mode="modal">
+                                                <button className="border border-ink/20 bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-signal hover:text-signal">
+                                                    Sign in to sync later
+                                                </button>
+                                            </SignInButton>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <ul className="divide-y divide-line border-y border-line">
                                     {favorites.map((asteroid, index) => {
                                         const scale = scaleFromDiameter(asteroid.estimatedDiameter, maxDiameter);
                                         const diameterLabel = formatDiameter(asteroid.estimatedDiameter);
 
                                         return (
-                                        <div
-                                            key={asteroid.name}
-                                            className="bg-surface/80 border border-hairline rounded-xl p-6 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-[0_0_24px_rgba(196,165,116,0.12)] animate-fade-rise"
-                                            style={{ animationDelay: `${index * 60}ms` }}
-                                        >
-                                            <img
-                                                src="/asteroid.svg"
-                                                alt=""
-                                                className="mb-4 opacity-90"
-                                                style={{ width: `${4 * scale}rem`, height: `${4 * scale}rem` }}
-                                            />
+                                            <li
+                                                key={asteroid.name}
+                                                className="grid grid-cols-1 gap-5 py-7 animate-fade-rise md:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.2fr)]"
+                                                style={{ animationDelay: `${index * 45}ms` }}
+                                            >
+                                                <div className="flex items-start justify-start md:justify-center">
+                                                    <AsteroidMark size={`${3.1 * scale}rem`} />
+                                                </div>
 
-                                            <h3 className="font-serif text-xl mb-2">{asteroid.name}</h3>
+                                                <div>
+                                                    <h3 className="font-display text-2xl font-bold tracking-tight text-ink">
+                                                        {asteroid.name}
+                                                    </h3>
+                                                    <p
+                                                        className={`mt-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] ${
+                                                            asteroid.potentiallyHazardous ? 'text-hazard' : 'text-safe'
+                                                        }`}
+                                                    >
+                                                        {asteroid.potentiallyHazardous ? 'PHA' : 'Non-PHA'}
+                                                        {diameterLabel && (
+                                                            <span className="text-ink-soft"> · {diameterLabel}</span>
+                                                        )}
+                                                    </p>
 
-                                            <p className={`mb-3 text-[11px] font-medium uppercase tracking-[0.2em] ${asteroid.potentiallyHazardous ? "text-hazard" : "text-safe"}`}>
-                                                {asteroid.potentiallyHazardous ? "PHA" : "Non-PHA"}
-                                            </p>
-
-                                            {diameterLabel && (
-                                                <p className="mb-4 tabular-nums text-sm text-muted">{diameterLabel}</p>
-                                            )}
-
-                                            {editingName === asteroid.name ? (
-                                                <div className="w-full mb-2 text-left flex-grow">
-                                                    <label className="text-muted text-[10px] font-medium uppercase tracking-[0.2em] block mb-1">
-                                                        Commander&apos;s log
-                                                    </label>
-                                                    <textarea
-                                                        value={draftNote}
-                                                        onChange={(event) => setDraftNote(event.target.value)}
-                                                        rows={3}
-                                                        className="w-full resize-none rounded-md border border-accent/40 bg-void/60 p-3 text-sm text-[#e8e6e3] focus:border-accent focus:outline-none"
-                                                    />
-                                                    <div className="flex gap-2 w-full mt-2">
-                                                        <button
-                                                            onClick={() => handleUpdateNote(asteroid.name, draftNote)}
-                                                            className="flex-1 py-2 border border-accent/50 text-accent hover:bg-accent hover:text-void rounded-md font-medium text-sm transition-colors"
-                                                        >
-                                                            Save
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setEditingName(null);
-                                                                setDraftNote('');
-                                                            }}
-                                                            className="flex-1 py-2 border border-hairline text-muted hover:border-muted rounded-md font-medium text-sm transition-colors"
-                                                        >
-                                                            Cancel
-                                                        </button>
+                                                    <div className="mt-5 flex flex-wrap gap-2">
+                                                        {editingName !== asteroid.name && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setEditingName(asteroid.name);
+                                                                        setDraftNote(asteroid.note || '');
+                                                                    }}
+                                                                    className="border border-ink/20 bg-panel px-4 py-2 text-sm font-semibold text-ink transition-colors hover:border-ink"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRemoveAsteroid(asteroid.name)}
+                                                                    className="border border-transparent px-4 py-2 text-sm font-semibold text-hazard transition-colors hover:border-hazard/40"
+                                                                >
+                                                                    Drop
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
-                                            ) : (
-                                                <>
-                                            <div className="w-full bg-void/60 rounded-md p-3 mb-6 text-sm text-[#e8e6e3] text-left flex-grow border border-hairline">
-                                                <span className="text-muted text-[10px] font-medium uppercase tracking-[0.2em] block mb-1">Commander&apos;s log</span>
-                                                <span className="italic text-muted">{asteroid.note || "No notes yet."}</span>
-                                            </div>
 
-                                            <div className="flex gap-2 w-full mt-auto">
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingName(asteroid.name);
-                                                        setDraftNote(asteroid.note || '');
-                                                    }}
-                                                    className="flex-1 py-2 border border-accent/50 text-accent hover:bg-accent hover:text-void rounded-md font-medium text-sm transition-colors"
-                                                >
-                                                    Edit
-                                                </button>
-
-                                                <button
-                                                    onClick={() => handleRemoveAsteroid(asteroid.name)}
-                                                    className="flex-1 py-2 border border-hairline text-muted hover:border-[#c17a6a]/60 hover:text-[#c17a6a] rounded-md font-medium text-sm transition-colors"
-                                                >
-                                                    Drop
-                                                </button>
-                                            </div>
-                                                </>
-                                            )}
-                                        </div>
+                                                <div>
+                                                    {editingName === asteroid.name ? (
+                                                        <div className="border border-line bg-panel p-4">
+                                                            <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-ink-soft">
+                                                                Commander&apos;s log
+                                                            </label>
+                                                            <textarea
+                                                                value={draftNote}
+                                                                onChange={(event) => setDraftNote(event.target.value)}
+                                                                rows={3}
+                                                                className="w-full resize-none border border-line bg-white p-3 text-sm text-ink outline-none focus:border-signal"
+                                                            />
+                                                            <div className="mt-3 flex gap-2">
+                                                                <button
+                                                                    onClick={() => handleUpdateNote(asteroid.name, draftNote)}
+                                                                    className="bg-ink px-4 py-2 text-sm font-semibold text-panel transition-colors hover:bg-signal hover:text-signal-ink"
+                                                                >
+                                                                    Save
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setEditingName(null);
+                                                                        setDraftNote('');
+                                                                    }}
+                                                                    className="border border-line px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink/40 hover:text-ink"
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="border border-line bg-panel/80 p-4">
+                                                            <span className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-ink-soft">
+                                                                Commander&apos;s log
+                                                            </span>
+                                                            <p className="text-sm italic leading-relaxed text-ink-soft">
+                                                                {asteroid.note || 'No notes yet.'}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
                                         );
                                     })}
-                                </div>
+                                </ul>
                             )}
-                        </div>
-
+                        </section>
                     </main>
                 )}
                 </>
@@ -511,16 +710,13 @@ function App() {
             {toast && (
                 <div
                     role="status"
-                    className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 border border-hairline bg-surface px-4 py-3 text-sm text-[#e8e6e3] shadow-[0_8px_32px_rgba(0,0,0,0.45)] animate-fade-rise"
+                    className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 border border-line bg-panel px-4 py-3 text-sm text-ink animate-fade-rise"
                 >
                     {toast}
                 </div>
             )}
-
-        </div>    
-
-    )
-
+        </div>
+    );
 }
 
 export default App;

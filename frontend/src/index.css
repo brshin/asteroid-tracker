@@ -245,3 +245,12 @@ body::after {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.06em;
 }
+
+.metric-strip {
+  margin-top: 0.85rem;
+}
+
+.metric-cell {
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(197, 208, 220, 0.9);
+}

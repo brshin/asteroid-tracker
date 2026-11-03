@@ -1,13 +1,15 @@
 # Asteroid Tracker
 
+Full-stack app for browsing near-Earth objects from NASA’s NeoWs API and saving authenticated favorites (with optional notes) to MongoDB.
+
 **[Live demo](https://asteroid-tracker-neo.vercel.app/)**
 
-Full-stack app for browsing near-Earth objects from NASA’s NeoWs API and saving authenticated favorites (with optional notes) to MongoDB.
+![Guest catalog view with today’s NEOs, approach metrics, and local vault](docs/catalog-guest.jpg)
 
 ## Features
 
-- Browse today’s near-Earth asteroids (name, estimated diameter, hazardous flag)
-- Sign in with Clerk; signed-out users see a welcome screen only
+- Browse today’s near-Earth asteroids with approach time, miss distance, velocity, magnitude, diameter range, and JPL SBDB links
+- Continue as guest to use the full catalog and a device-local vault; sign in with Clerk to sync favorites to MongoDB
 - Save / remove favorites and edit a per-asteroid note (“Commander’s Log”)
 - Favorites CRUD is scoped to the authenticated Clerk `userId`
 
@@ -24,7 +26,7 @@ Full-stack app for browsing near-Earth objects from NASA’s NeoWs API and savin
 ## Architecture
 
 ```
-Browser (React + Clerk session)
+Browser (React + Clerk session, or guest localStorage vault)
     │
     ├─ NASA catalog data ──► Express GET /asteroids ──► NASA NeoWs API
     │
@@ -34,6 +36,7 @@ Browser (React + Clerk session)
 ```
 
 - The **frontend never calls NASA directly**. It requests your Express API; the server proxies NeoWs.
+- Guests can favorite locally; signing in syncs the local vault to the API when possible.
 - Clerk issues a session on the client; protected API calls send `Authorization: Bearer <token>` from `getToken()`.
 - Favorites handlers read `req.auth.userId` and include it in every MongoDB query/write.
 
@@ -43,6 +46,7 @@ Browser (React + Clerk session)
 
 ```
 asteroid-tracker/
+├── docs/              # Screenshots and docs assets
 ├── frontend/          # Vite + React app
 │   ├── .env.example
 │   └── src/
@@ -54,18 +58,20 @@ asteroid-tracker/
 
 ## API reference
 
-Base URL locally: `http://localhost:3000`
+Base URL locally: `http://localhost:3000` (or `PORT` if set)
 
 ### Public / proxy routes
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/` | Health check |
-| `GET` | `/asteroids` | Today’s NEOs from NASA NeoWs (proxied) |
+| `GET` | `/asteroids` | Today’s NEOs from NASA NeoWs (proxied; expanded fields) |
 | `GET` | `/asteroids/search?date=YYYY-MM-DD` | NEOs for a given date (proxied) |
 | `GET` | `/asteroids/:id` | Single NEO by NASA ID (proxied) |
 
 The search and `:id` routes exist on the server but are not used by the current UI.
+
+Catalog objects include `id`, `name`, diameter min/max, PHA flag, absolute magnitude, JPL URL, close-approach time, miss distance, relative velocity, and Sentry flag.
 
 ### Authenticated favorites routes
 
@@ -74,7 +80,7 @@ Require a valid Clerk JWT in the `Authorization: Bearer` header.
 | Method | Endpoint | Description | Typical responses |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/asteroids/favorites` | List the signed-in user’s favorites | `200`, `401`, `500` |
-| `POST` | `/asteroids/favorites` | Save a favorite (`name`, `potentiallyHazardous`) | `201`, `400`, `401`, `500` |
+| `POST` | `/asteroids/favorites` | Save a favorite (name, PHA, and optional NEO metadata) | `201`, `400`, `401`, `500` |
 | `PATCH` | `/asteroids/favorites/:name` | Update `note` for that user’s favorite | `200`, `401`, `404`, `500` |
 | `DELETE` | `/asteroids/favorites/:name` | Remove that user’s favorite | `200`, `401`, `404`, `500` |
 
@@ -111,7 +117,7 @@ cp backend/.env.example backend/.env
 
 ### 2. Install and run
 
-Terminal 1 — API (listens on port **3000**):
+Terminal 1 — API (listens on port **3000** by default, or `PORT`):
 
 ```bash
 cd backend
@@ -137,4 +143,5 @@ On the free Render tier, the API may take up to ~30 seconds to wake from sleep o
 
 - The NASA API key is currently hardcoded in `backend/server.js`; for production it should be moved to an environment variable.
 - Duplicate favorites are rejected when the asteroid `name` already exists globally (MongoDB unique index), not only for the current user.
+- Older favorites created before the expanded NEO schema may be missing approach/diameter metadata until re-favorited.
 - There is no automated test suite yet (`backend` `npm test` is a placeholder).

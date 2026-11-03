@@ -1,14 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
-  <path d="M 50,10 C 68,8 84,18 89,35 C 94,52 87,70 76,82 C 65,94 40,92 26,84 C 12,76 8,56 13,40 C 18,24 32,12 50,10 Z" fill="#6B696E" stroke="#424045" stroke-width="4" stroke-linejoin="round"/>
-  
-  <path d="M 50,14 C 63,12 76,20 81,32 C 86,44 82,58 75,68 C 72,52 58,34 40,24 C 43,20 46,16 50,14 Z" fill="#858388"/>
-  
-  <ellipse cx="42" cy="42" rx="11" ry="8" fill="#424045" transform="rotate(-15, 42, 42)"/>
-  <ellipse cx="41" cy="41" rx="9" ry="6" fill="#2E2C30" transform="rotate(-15, 42, 42)"/>
-  
-  <ellipse cx="68" cy="62" rx="8" ry="8" fill="#424045"/>
-  <ellipse cx="67" cy="61" rx="6" ry="6" fill="#2E2C30"/>
-  
-  <ellipse cx="26" cy="66" rx="5" ry="4" fill="#424045" transform="rotate(20, 26, 66)"/>
-  <ellipse cx="25" cy="65" rx="4" ry="3" fill="#2E2C30" transform="rotate(20, 26, 66)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Asteroid">
+  <defs>
+    <radialGradient id="body" cx="34%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#d7cfc4"/>
+      <stop offset="38%" stop-color="#a79f93"/>
+      <stop offset="78%" stop-color="#6f675c"/>
+      <stop offset="100%" stop-color="#4a453e"/>
+    </radialGradient>
+    <radialGradient id="sheen" cx="30%" cy="24%" r="55%">
+      <stop offset="0%" stop-color="#f4efe8" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#f4efe8" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#f4efe8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="crater" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#3f3b36"/>
+      <stop offset="70%" stop-color="#5a544c"/>
+      <stop offset="100%" stop-color="#6d665c"/>
+    </radialGradient>
+    <radialGradient id="shade" cx="70%" cy="78%" r="55%">
+      <stop offset="0%" stop-color="#2d2a26" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#2d2a26" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <path d="M50.2 8.4C68.4 6.2 85.1 16.8 90.8 34.1C96.4 51.2 89.2 70.4 76.1 82.6C63.2 94.7 42.4 97.2 27.1 88.4C12.1 79.8 5.8 61.4 11.2 44.6C16.5 28.1 32.4 10.5 50.2 8.4Z" fill="url(#body)"/>
+  <path d="M50.2 8.4C68.4 6.2 85.1 16.8 90.8 34.1C93.4 42.1 92.6 50.8 88.9 58.4C84.1 44.6 70.8 28.8 52.6 20.4C46.8 17.8 41.1 13.2 37.4 10.8C41.5 9.2 45.8 8.6 50.2 8.4Z" fill="url(#sheen)"/>
+  <ellipse cx="72" cy="70" rx="22" ry="16" fill="url(#shade)" transform="rotate(-18 72 70)"/>
+
+  <ellipse cx="40" cy="40" rx="12.5" ry="9.5" fill="url(#crater)" transform="rotate(-16 40 40)"/>
+  <ellipse cx="37.5" cy="37.8" rx="7.2" ry="4.8" fill="#2a2723" opacity="0.45" transform="rotate(-16 37.5 37.8)"/>
+  <ellipse cx="35.8" cy="35.4" rx="3.4" ry="1.8" fill="#ebe4da" opacity="0.18" transform="rotate(-16 35.8 35.4)"/>
+
+  <ellipse cx="68" cy="58" rx="8.5" ry="8.5" fill="url(#crater)"/>
+  <ellipse cx="66.2" cy="56" rx="4.6" ry="4.6" fill="#2a2723" opacity="0.42"/>
+  <ellipse cx="64.6" cy="54.2" rx="2" ry="1.2" fill="#ebe4da" opacity="0.16"/>
+
+  <ellipse cx="26" cy="64" rx="6.2" ry="5" fill="url(#crater)" transform="rotate(18 26 64)"/>
+  <ellipse cx="24.6" cy="62.6" rx="3.1" ry="2.3" fill="#2a2723" opacity="0.4" transform="rotate(18 24.6 62.6)"/>
+
+  <ellipse cx="58" cy="28" rx="4.2" ry="3.4" fill="url(#crater)" transform="rotate(-28 58 28)"/>
+  <ellipse cx="57" cy="27" rx="2" ry="1.4" fill="#2a2723" opacity="0.35" transform="rotate(-28 57 27)"/>
 </svg>

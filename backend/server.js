@@ -10,12 +10,39 @@ const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 const Asteroid = require('./models/Asteroid');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-let favoriteAsteroids = [];
+function toNumberOrNull(value) {
+    if (value == null || value === '') {
+        return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatNeo(asteroid) {
+    const approach = Array.isArray(asteroid.close_approach_data)
+        ? asteroid.close_approach_data[0]
+        : null;
+    const diameter = asteroid.estimated_diameter?.meters;
+
+    return {
+        id: asteroid.id || asteroid.neo_reference_id || null,
+        name: asteroid.name,
+        estimatedDiameter: diameter?.estimated_diameter_max ?? null,
+        estimatedDiameterMin: diameter?.estimated_diameter_min ?? null,
+        potentiallyHazardous: Boolean(asteroid.is_potentially_hazardous_asteroid),
+        absoluteMagnitudeH: toNumberOrNull(asteroid.absolute_magnitude_h),
+        nasaJplUrl: asteroid.nasa_jpl_url || null,
+        closeApproachDate: approach?.close_approach_date_full || approach?.close_approach_date || null,
+        missDistanceKm: toNumberOrNull(approach?.miss_distance?.kilometers),
+        relativeVelocityKps: toNumberOrNull(approach?.relative_velocity?.kilometers_per_second),
+        isSentryObject: Boolean(asteroid.is_sentry_object),
+    };
+}
 
 app.get('/asteroids/favorites', ClerkExpressRequireAuth(), async (req, res) => {
     try {
@@ -74,7 +101,19 @@ app.delete('/asteroids/favorites/:name', ClerkExpressRequireAuth(), async (req, 
 });
 
 app.post('/asteroids/favorites', ClerkExpressRequireAuth(), async (req, res) => {
-    const { name, potentiallyHazardous } = req.body;
+    const {
+        name,
+        potentiallyHazardous,
+        id,
+        estimatedDiameter,
+        estimatedDiameterMin,
+        absoluteMagnitudeH,
+        nasaJplUrl,
+        closeApproachDate,
+        missDistanceKm,
+        relativeVelocityKps,
+        isSentryObject,
+    } = req.body;
 
     if (!name) {
         return res.status(400).json({message: "No favorite asteroid data provided."});
@@ -84,10 +123,19 @@ app.post('/asteroids/favorites', ClerkExpressRequireAuth(), async (req, res) => 
         const loggedInUserId = req.auth.userId;
 
         const newFavorite = new Asteroid({
-             name: name,
-             potentiallyHazardous: potentiallyHazardous,
-             userId: loggedInUserId
-            });
+            name,
+            neoId: id || null,
+            potentiallyHazardous: Boolean(potentiallyHazardous),
+            estimatedDiameter: toNumberOrNull(estimatedDiameter),
+            estimatedDiameterMin: toNumberOrNull(estimatedDiameterMin),
+            absoluteMagnitudeH: toNumberOrNull(absoluteMagnitudeH),
+            nasaJplUrl: nasaJplUrl || null,
+            closeApproachDate: closeApproachDate || null,
+            missDistanceKm: toNumberOrNull(missDistanceKm),
+            relativeVelocityKps: toNumberOrNull(relativeVelocityKps),
+            isSentryObject: Boolean(isSentryObject),
+            userId: loggedInUserId,
+        });
 
         await newFavorite.save();
 
@@ -118,17 +166,8 @@ app.get('/asteroids', async (req, res) => {
         return res.json({message: "API failed!", details: data.error.message});
     }
 
-    const rawAsteroids = data.near_earth_objects[today];
-
-    const cleanAsteroids = rawAsteroids.map((asteroid) => {
-        return {
-            name: asteroid.name,
-            estimatedDiameter: asteroid.estimated_diameter.meters.estimated_diameter_max,
-            potentiallyHazardous: asteroid.is_potentially_hazardous_asteroid
-        };
-    });
-
-    res.json(cleanAsteroids);
+    const rawAsteroids = data.near_earth_objects[today] || [];
+    res.json(rawAsteroids.map(formatNeo));
 });
 
 app.get('/asteroids/search', async (req, res) => {
@@ -144,17 +183,8 @@ app.get('/asteroids/search', async (req, res) => {
 
         const data = await response.json();
 
-        const rawAsteroids = data.near_earth_objects[targetDate];
-
-        const cleanAsteroids = rawAsteroids.map((asteroid) => {
-            return {
-                name: asteroid.name,
-                estimatedDiameter: asteroid.estimated_diameter.meters.estimated_diameter_max,
-                potentiallyHazardous: asteroid.is_potentially_hazardous_asteroid
-            };
-        });
-
-        res.json(cleanAsteroids);
+        const rawAsteroids = data.near_earth_objects[targetDate] || [];
+        res.json(rawAsteroids.map(formatNeo));
     }
     catch (error) {
         res.json({error: "Failed to fetch today's asteroid data."});
@@ -173,12 +203,7 @@ app.get('/asteroids/:id', async (req, res) => {
         const response = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${asteroidID}?api_key=j7ASJZKYw91SaZmonl9HCLGACh586lgDAH0MoNYd`);
 
         const data = await response.json();
-
-        res.json({
-            name: data.name,
-            absoluteMagnitudeH: data.absolute_magnitude_h,
-            potentiallyHazardous: data.is_potentially_hazardous_asteroid
-        });
+        res.json(formatNeo(data));
     }
     catch (error) {
         res.json({error: "Failed to fetch specific asteroid data." });

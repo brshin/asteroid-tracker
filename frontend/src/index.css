@@ -150,10 +150,6 @@ body::after {
 }
 
 .hero-stage {
-  position: absolute;
-  inset: auto 0 8% auto;
-  width: min(48vw, 560px);
-  height: min(48vw, 560px);
   pointer-events: none;
 }
 
@@ -192,8 +188,6 @@ body::after {
 }
 
 .hero-asteroid {
-  position: absolute;
-  inset: 22%;
   animation: float-y 7s ease-in-out infinite;
 }
 
@@ -247,10 +241,10 @@ body::after {
 }
 
 .metric-strip {
-  margin-top: 0.85rem;
+  margin-top: 0.55rem;
 }
 
 .metric-cell {
-  padding-top: 0.55rem;
-  border-top: 1px solid rgba(197, 208, 220, 0.9);
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(197, 208, 220, 0.85);
 }

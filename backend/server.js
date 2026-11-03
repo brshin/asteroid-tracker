@@ -10,7 +10,7 @@ const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 const Asteroid = require('./models/Asteroid');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());

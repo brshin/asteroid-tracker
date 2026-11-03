@@ -3,6 +3,27 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-reac
 import { useAuth } from "@clerk/clerk-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
+const GUEST_SESSION_KEY = 'asteroid-tracker-guest';
+
+function readGuestFlag() {
+    try {
+        return sessionStorage.getItem(GUEST_SESSION_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function writeGuestFlag(enabled) {
+    try {
+        if (enabled) {
+            sessionStorage.setItem(GUEST_SESSION_KEY, '1');
+        } else {
+            sessionStorage.removeItem(GUEST_SESSION_KEY);
+        }
+    } catch {
+        // sessionStorage may be unavailable; in-memory state still works for the session
+    }
+}
 
 function scaleFromDiameter(meters, maxMeters) {
     if (!meters || !maxMeters) {
@@ -25,9 +46,11 @@ function App() {
     const [toast, setToast] = useState(null);
     const [editingName, setEditingName] = useState(null);
     const [draftNote, setDraftNote] = useState('');
+    const [isGuest, setIsGuest] = useState(readGuestFlag);
     const toastTimer = useRef(null);
 
     const { getToken, isLoaded, isSignedIn } = useAuth();
+    const canBrowse = isSignedIn || isGuest;
 
     const showToast = (message) => {
         setToast(message);
@@ -37,38 +60,64 @@ function App() {
         toastTimer.current = setTimeout(() => setToast(null), 4000);
     };
 
-    useEffect(() => {
+    const enterAsGuest = () => {
+        writeGuestFlag(true);
+        setIsGuest(true);
+    };
 
+    useEffect(() => {
+        if (isSignedIn && isGuest) {
+            writeGuestFlag(false);
+            setIsGuest(false);
+        }
+    }, [isSignedIn, isGuest]);
+
+    useEffect(() => {
         if (!isLoaded) {
             return;
         }
 
-        if (!isSignedIn) {
+        if (!isSignedIn && !isGuest) {
+            setAsteroids([]);
+            setFavorites([]);
             setIsLoading(false);
             return;
         }
 
         const fetchAllData = async () => {
-            const token = await getToken();
+            setIsLoading(true);
 
             try {
-                const [asteroidsRes, favoritesRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/asteroids`),
-                    fetch(`${API_BASE_URL}/asteroids/favorites`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    })
-                ]);
+                if (isSignedIn) {
+                    const token = await getToken();
+                    const [asteroidsRes, favoritesRes] = await Promise.all([
+                        fetch(`${API_BASE_URL}/asteroids`),
+                        fetch(`${API_BASE_URL}/asteroids/favorites`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        })
+                    ]);
 
-                if (asteroidsRes.ok) {
-                    const asteroidsData = await asteroidsRes.json();
-                    console.log("Data from backend (asteroids):", asteroidsData);
-                    setAsteroids(asteroidsData);
-                }
-    
-                if (favoritesRes.ok) {
-                    const favoritesData = await favoritesRes.json();
-                    console.log("Data from backend (favorites):", favoritesData);
-                    setFavorites(favoritesData);
+                    if (asteroidsRes.ok) {
+                        const asteroidsData = await asteroidsRes.json();
+                        console.log("Data from backend (asteroids):", asteroidsData);
+                        setAsteroids(asteroidsData);
+                    }
+
+                    if (favoritesRes.ok) {
+                        const favoritesData = await favoritesRes.json();
+                        console.log("Data from backend (favorites):", favoritesData);
+                        setFavorites(favoritesData);
+                    }
+                } else {
+                    const asteroidsRes = await fetch(`${API_BASE_URL}/asteroids`);
+
+                    if (asteroidsRes.ok) {
+                        const asteroidsData = await asteroidsRes.json();
+                        console.log("Data from backend (asteroids):", asteroidsData);
+                        setAsteroids(asteroidsData);
+                    }
+
+                    setFavorites([]);
                 }
             }
             catch (err) {
@@ -78,14 +127,17 @@ function App() {
             finally {
                 setIsLoading(false);
             }
-            
-        }
+        };
 
         fetchAllData();
-        
-    }, [isLoaded, isSignedIn, getToken]);
+    }, [isLoaded, isSignedIn, isGuest, getToken]);
 
     const handleSaveAsteroid = async (asteroid) => {
+        if (!isSignedIn) {
+            showToast('Sign in to save favorites to your vault.');
+            return;
+        }
+
         const token = await getToken();
         console.log(token);
 
@@ -194,8 +246,13 @@ function App() {
                     <span className="mt-1.5 block h-px w-14 bg-accent" />
                 </h1>
 
-                <div className="auth-controls">
+                <div className="auth-controls flex items-center gap-3">
                     <SignedOut>
+                        {isGuest && (
+                            <span className="hidden sm:inline text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+                                Guest
+                            </span>
+                        )}
                         <SignInButton mode="modal">
                             <button className="rounded-md border border-accent/70 px-4 py-2 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
                                 Sign in
@@ -208,7 +265,7 @@ function App() {
                 </div>
             </nav>
 
-            <SignedOut>
+            {!canBrowse && (
                 <div className="flex min-h-[calc(100vh-4.5rem)] flex-col items-center justify-center px-6 text-center animate-fade-rise">
                     <p className="mb-6 text-[11px] font-medium uppercase tracking-[0.35em] text-accent">
                         Near-Earth Catalog
@@ -217,17 +274,27 @@ function App() {
                         The Vault
                     </h2>
                     <p className="mb-10 max-w-md text-base leading-relaxed text-muted">
-                        Sign in to browse today&apos;s near-Earth objects and keep a private log of those you choose to watch.
+                        Browse today&apos;s near-Earth objects as a guest, or sign in to keep a private vault of the ones you watch.
                     </p>
-                    <SignInButton mode="modal">
-                        <button className="border border-accent bg-accent px-8 py-3 text-sm font-medium tracking-wide text-void transition-colors hover:bg-accent/90">
-                            Sign in
+                    <div className="flex flex-col items-center gap-3 sm:flex-row">
+                        <button
+                            type="button"
+                            onClick={enterAsGuest}
+                            className="border border-accent bg-accent px-8 py-3 text-sm font-medium tracking-wide text-void transition-colors hover:bg-accent/90"
+                        >
+                            Continue as guest
                         </button>
-                    </SignInButton>
+                        <SignInButton mode="modal">
+                            <button className="border border-accent/70 px-8 py-3 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
+                                Sign in
+                            </button>
+                        </SignInButton>
+                    </div>
                 </div>
-            </SignedOut>
+            )}
 
-            <SignedIn>
+            {canBrowse && (
+                <>
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center my-32 text-center animate-fade-rise">
                         <div className="relative mb-8 h-24 w-24" aria-hidden="true">
@@ -301,17 +368,25 @@ function App() {
                                             </>
                                         )}
 
-                                        <button
-                                            onClick={() => handleSaveAsteroid(asteroid)}
-                                            disabled={isFavorited}
-                                            className={`mt-auto w-full py-2 rounded-md text-sm font-medium tracking-wide transition-colors ${
-                                                isFavorited
-                                                    ? "border border-hairline text-muted cursor-not-allowed"
-                                                    : "border border-accent/70 text-accent hover:bg-accent hover:text-void"
-                                            }`}
-                                        >
-                                            {isFavorited ? "In vault" : "Favorite"}
-                                        </button>
+                                        {isSignedIn ? (
+                                            <button
+                                                onClick={() => handleSaveAsteroid(asteroid)}
+                                                disabled={isFavorited}
+                                                className={`mt-auto w-full py-2 rounded-md text-sm font-medium tracking-wide transition-colors ${
+                                                    isFavorited
+                                                        ? "border border-hairline text-muted cursor-not-allowed"
+                                                        : "border border-accent/70 text-accent hover:bg-accent hover:text-void"
+                                                }`}
+                                            >
+                                                {isFavorited ? "In vault" : "Favorite"}
+                                            </button>
+                                        ) : (
+                                            <SignInButton mode="modal">
+                                                <button className="mt-auto w-full rounded-md border border-accent/70 py-2 text-sm font-medium tracking-wide text-accent transition-colors hover:bg-accent hover:text-void">
+                                                    Sign in to favorite
+                                                </button>
+                                            </SignInButton>
+                                        )}
                                     </div>
                                     );
                                 })}
@@ -321,7 +396,18 @@ function App() {
                         <div className="mt-16">
                             <h2 className="font-serif text-3xl tracking-tight border-b border-hairline pb-3 mb-8">The vault</h2>
 
-                            {favorites.length === 0 ? (
+                            {!isSignedIn ? (
+                                <div className="rounded-xl border border-dashed border-hairline px-6 py-16 text-center text-muted">
+                                    <p className="mb-6 text-base">
+                                        Sign in to save asteroids and keep a private commander&apos;s log.
+                                    </p>
+                                    <SignInButton mode="modal">
+                                        <button className="border border-accent bg-accent px-8 py-3 text-sm font-medium tracking-wide text-void transition-colors hover:bg-accent/90">
+                                            Sign in to unlock vault
+                                        </button>
+                                    </SignInButton>
+                                </div>
+                            ) : favorites.length === 0 ? (
                                 <div className="text-center py-16 rounded-xl border border-dashed border-hairline text-muted">
                                     <p className="text-base">The vault is empty. Choose an object from today&apos;s catalog.</p>
                                 </div>
@@ -419,7 +505,8 @@ function App() {
 
                     </main>
                 )}
-            </SignedIn>
+                </>
+            )}
 
             {toast && (
                 <div
